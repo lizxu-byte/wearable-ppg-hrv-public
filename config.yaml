@@ -1,0 +1,154 @@
+# PPG Algorithm Comparison System — Master Configuration
+# All signal processing parameters live here. No magic numbers in code.
+# Before changing any value: document the reason in PROGRESS.md and confirm with user.
+
+# ── Data ──────────────────────────────────────────────────────────────────────
+data:
+  # Local participant recordings — never committed (see .gitignore and README).
+  # Relative paths resolve against the repository root; SHIMMER_DATA_ROOT overrides.
+  root_dir: "data/shimmer"
+  subject_folders: "0..66"          # numeric folder names
+  csv_glob: "**/*-csv/*.csv"
+  ppg_column_priority:              # checked in order, first match wins
+    - "Shimmer_1AA8_PPG_A13_CAL"
+    - "PPG_A13_CAL"
+    - "PPG_CAL"
+    - "PPG"
+  timestamp_column: "Shimmer_1AA8_TimestampSync_Unix_CAL"
+  accel_columns:                    # used for motion artifact detection
+    ln: ["Shimmer_1AA8_Accel_LN_X_CAL", "Shimmer_1AA8_Accel_LN_Y_CAL", "Shimmer_1AA8_Accel_LN_Z_CAL"]
+    wr: ["Shimmer_1AA8_Accel_WR_X_CAL", "Shimmer_1AA8_Accel_WR_Y_CAL", "Shimmer_1AA8_Accel_WR_Z_CAL"]
+  gsr_columns:
+    conductance: "Shimmer_1AA8_GSR_Skin_Conductance_CAL"  # µS
+    resistance:  "Shimmer_1AA8_GSR_Skin_Resistance_CAL"   # kΩ
+
+# ── Sampling ──────────────────────────────────────────────────────────────────
+sampling:
+  fs: 256                           # Hz — Shimmer3 configured rate
+  # Ref: measured median inter-sample interval = 3.91 ms → 256.0 Hz
+
+# ── Segment selection ─────────────────────────────────────────────────────────
+segment:
+  last_seconds: 180                 # take last N seconds of each session
+  min_duration_s: 30                # reject sessions shorter than this
+
+# ── Baseline removal ──────────────────────────────────────────────────────────
+# Methods compared: polynomial_detrend | highpass | wavelet
+baseline:
+  method: "polynomial_detrend"      # default for comparison runner
+  polynomial_order: 3
+
+# ── Bandpass filter ───────────────────────────────────────────────────────────
+# Methods compared: butterworth | fir_equiripple
+# Ref (lowcut/highcut): Elgendi M et al. (2013) PLoS ONE 8(10):e76585 — 0.5–8 Hz
+#                       Charlton PH et al. (2022) Proc IEEE 110(3):355-381
+filter:
+  method: "butterworth"
+  lowcut_hz: 0.5                    # high-pass edge (Hz)
+  highcut_hz: 8.0                   # low-pass edge (Hz)
+  order: 4
+  # Current sensor position: fingertip (Shimmer3 optical PPG probe).
+  # If sensor moves to wrist or elderly population: lowcut may drop to 0.4 Hz;
+  # highcut may drop to 5 Hz (lower HR ceiling). Adjust after re-validation.
+
+# ── Peak detection ────────────────────────────────────────────────────────────
+# Methods compared: elgendi | neurokit2_default | adaptive_threshold
+# Ref (elgendi): Elgendi M et al. (2013) PLoS ONE 8(10):e76585
+peaks:
+  method: "elgendi"
+  # Elgendi parameters
+  elgendi:
+    peakwindow: 0.111               # seconds — W1 (systolic peak window)
+    beatwindow: 0.667               # seconds — W2 (beat window)
+    beatoffset: 0.02                # offset fraction above beat average
+    mindelay: 0.3                   # seconds — min inter-peak interval
+
+# ── RR interval cleaning ──────────────────────────────────────────────────────
+# Methods compared: physiological_3sd | malik_rule | karlsson
+# Ref: Task Force ESC/NASPE (1996) Circulation 93:1043-1065
+#      Malik M et al. (1996) — adjacent RR difference threshold
+#      Karlsson M et al. (2012) Biomed Eng Online 11:2
+rr_cleaning:
+  method: "physiological_3sd"
+  physiological_min_ms: 400         # = 150 bpm ceiling
+  physiological_max_ms: 1500        # = 40 bpm floor
+  sd_multiplier: 3.0                # 3SD rule for outlier removal
+  malik_threshold: 0.20             # adjacent RR change fraction (Malik rule)
+  # For athletic populations: physiological_min_ms may drop to 333 ms (180 bpm)
+
+# ── RR interpolation ─────────────────────────────────────────────────────────
+# Methods compared: cubic_spline | quadratic | linear
+# Ref: Task Force 1996 — recommends resampling to uniform grid before freq analysis
+rr_interpolation:
+  method: "cubic_spline"
+  target_fs_hz: 4                   # interpolation target rate (Hz)
+  clip_after_interpolation: true    # clip to [physiological_min_ms, physiological_max_ms]
+
+# ── HRV — time domain ─────────────────────────────────────────────────────────
+# Ref: Task Force ESC/NASPE (1996) Circulation 93:1043-1065
+hrv_time:
+  pnn50_threshold_ms: 50            # ms — standard threshold for pNN50
+  # NOTE: pNN50 denominator = len(diff_rr), NOT len(rr_ms). See Task Force 1996.
+
+# ── HRV — frequency domain ───────────────────────────────────────────────────
+# Methods compared: welch | ar_burg | lomb_scargle
+# Ref: Task Force 1996 — VLF/LF/HF band definitions
+hrv_freq:
+  method: "welch"
+  vlf_band: [0.003, 0.04]           # Hz
+  lf_band:  [0.04,  0.15]           # Hz
+  hf_band:  [0.15,  0.40]           # Hz
+  welch_nperseg: 256
+  ar_order: 16                      # Burg method AR model order
+  # HF upper edge 0.40 Hz assumes breathing rate ≤ 24 breaths/min;
+  # raise to 0.50 Hz for children or high respiratory rate populations.
+
+# ── HRV — nonlinear (Poincaré) ───────────────────────────────────────────────
+# Ref: Brennan M et al. (2001) IEEE Trans Biomed Eng 48(11):1342-1347
+hrv_nonlinear:
+  enabled: true
+
+# ── Signal Quality Index (SQI) ───────────────────────────────────────────────
+# Methods compared: template_correlation | spectral_entropy
+# Ref: Orphanidou C et al. (2015) IEEE J Biomed Health Inform 19(3):832-838
+sqi:
+  template_correlation_threshold: 0.66   # below = poor quality
+  spectral_entropy_threshold: 0.8        # above = poor quality (high entropy)
+  window_s: 10                           # sliding window length (seconds)
+
+# ── Motion artifact detection ────────────────────────────────────────────────
+# Ref: Salehizadeh SMA et al. (2014) Sensors 14(3):3872-3897
+motion:
+  accel_magnitude_threshold: 2.0    # m/s² — above = motion detected
+  use_column: "wr"                  # wide-range accel (higher sensitivity)
+
+# ── GSR analysis ─────────────────────────────────────────────────────────────
+# Ref: Boucsein W et al. (2012) Psychophysiology 49(8):1017-1034
+gsr:
+  scl_lowpass_hz: 0.05              # Hz — skin conductance level (tonic)
+  scr_highpass_hz: 0.05             # Hz — skin conductance response (phasic)
+  scr_min_amplitude_us: 0.01        # µS — minimum SCR amplitude to count
+
+# ── Quality thresholds ───────────────────────────────────────────────────────
+# WARNING: Do NOT relax these to pass validation. Ask user first.
+quality:
+  rr_mean_range_ms: [600, 1200]     # physiologically plausible mean RR
+  sdnn_min_ms: 20
+  rmssd_min_ms: 15
+  min_valid_rr_count: 20
+  max_rr_removed_ratio: 0.30        # reject session if >30% RR removed
+
+# ── Validation ────────────────────────────────────────────────────────────────
+validation:
+  synthetic_seed: 42
+  public_dataset_dir: "data/bidmc"   # fetched by scripts/download_bidmc.py
+  hr_mae_target_bpm: 2.0            # target HR mean absolute error
+  peak_f1_target: 0.95              # target peak detection F1
+  rmssd_error_target_ms: 5.0        # target RMSSD absolute error vs ECG reference
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+dashboard:
+  host: "127.0.0.1"
+  port: 8050
+  debug: false                      # true enables the Werkzeug debugger — local use only
+  default_window_s: 30              # PPG display window length

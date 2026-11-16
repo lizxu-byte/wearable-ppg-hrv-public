@@ -1,0 +1,36 @@
+# Whitelist: ignore everything, then re-include only what is meant to be public.
+# Participant recordings (Shimmer subject folders 0/ … 66/, data/shimmer/),
+# anything derived from them, and the BIDMC raw files never enter the repo.
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/requirements.txt
+!/config.yaml
+!/src/
+!/tests/
+!/scripts/
+!/results/
+!/docs/
+
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Raw or tabular signal files are never committed, wherever they appear.
+*.csv
+*.tsv
+*.mat
+*.dat
+*.hea
+*.edf
+*.xlsx
+**/*MultiSession*
+**/*Calibrated*
+
+# Only public-data (BIDMC) results and synthetic/BIDMC screenshots are shared.
+/results/*
+!/results/bidmc_summary.csv
+!/results/bidmc_per_record.csv
+/docs/*
+!/docs/*.png
