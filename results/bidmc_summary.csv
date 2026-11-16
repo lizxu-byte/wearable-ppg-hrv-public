@@ -1,0 +1,7 @@
+peak_method,clean_method,n_records,n_failed,hr_mae_median,hr_mae_p75,rmssd_err_median,rmssd_err_p75,f1_median,f1_p25,best
+elgendi,malik,53,0,4.968,24.773,24.439,75.617,0.946,0.821,True
+elgendi,karlsson,53,0,4.968,24.773,25.927,96.955,0.946,0.821,False
+elgendi,physiological_3sd,53,0,4.968,24.773,36.484,165.105,0.946,0.821,False
+prominence,karlsson,53,0,5.71,24.773,30.61,97.066,0.944,0.82,False
+prominence,malik,53,0,5.71,24.773,30.719,74.801,0.944,0.82,False
+prominence,physiological_3sd,53,0,5.71,24.773,31.507,165.0,0.944,0.82,False
